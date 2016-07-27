@@ -1,30 +1,39 @@
 \chapter{Rustへの道}
+\begin{quotation}
+  Program testing can be a very effective way to show the presence of bugs, \\
+  but is hopelessly inadequate for showing their absence. ...
+
+  The programmer should let correctness proof and program grow hand in hand.
+\end{quotation}
+\begin{flushright}
+  --- Edsger W. Dijkstra,``The Humble Programmer'' (1972)
+\end{flushright}
 
 \section{前書き}
 この種の同人誌に於ける利点は，何と言っても全く意識外の情報を仕入れる機会が得られる所だろう．
 すると弊サークルのプログラミング言語大好きおじさんこと， \verb|@_Nnwww| が貴方に寄せる本記事の内容は1つしか無い，急進にして注目のプログラミング言語紹介である．
 まぁ急進にして注目のといえば人の属する界隈によりけりだが，ここでは正式リリースから1年が経過し，
-2016年にStack Overflowが行ったデベロッパー向けの調査にて「最も愛されている言語」に登りつめたプログラミング言語(https://stackoverflow.com/research/developer-survey-2016)，
+2016年にstack Overflowが行ったデベロッパー向けの調査にて「最も愛されている言語」に登りつめたプログラミング言語\cite{most_loved}，
 「Rust」について紹介しよう．
 即ち，本記事はRustについて，その言語が現れた文脈を共有しない読者の事も頭の幾らかに残しつつ，その理念や設計について示すものである．
 
 なお，貴方がRustに今すぐ入門する意気に溢れているならばこの記事を読むよりも
-rustup(https://github.com/rust-lang-nursery/rustup.rs)を導入し，
-有志による翻訳リポジトリ(https://github.com/rust-lang-ja/the-rust-programming-language-ja)(拙訳も提供させていただいた)とRustnomicon(https://doc.rust-lang.org/nomicon/)の読破を推奨する．
+rustup\cite{rustup}を導入し，
+有志による翻訳リポジトリ\cite{rustdoc_ja}(拙訳も提供させていただいた)及びRustnomicon\cite{nomicon}の読破を推奨する．
 
-間違い等については前述のアカウントに御一報下さい．文体ですか？やってみたかっただけです．
+間違い等については前述のアカウントに御一報下さい．文体ですか？やってみたかっただけです :)
 
 \section{Rustとは}
 Rustは「ゼロコスト抽象化」を実現する「トレイト」ベースの静的型付き「手続き型プログラミング」言語である．完！
 
 というのは言葉足らずの私の主観だが事実しか並んでいない筈だ．
-もう少し真面目に話せば Mozilla によって現在開発されているLLVMバックエンドのネイティブコンパイル言語であり，
-同社が製作中の新作webレンダリングエンジン Servo の実装に用いられている．
+もう少し真面目に話せば1400人以上ものコントリビュータによって開発されているLLVMバックエンドのネイティブコンパイル言語であり，
+Mozillaが製作中の新作webレンダリングエンジンServoの実装に用いられている．
 公式では安全性，速度．並行性の3つの目標にフォーカスし，それらをガーベジコレクタ無しで実現するシステムプログラミング言語である，といった紹介がなされており，
 レイヤ的にはこれまでC/C++のような言語が取り組んでいた領域に昨今の知見を持ち込む進捗だと言えるだろう．
 
 さて，少なくともこの言語の場合，来たる知見の方角を意識しつつ機能を咀嚼するとわかりやすい．といっても大別して2つだと考えられる．
-即ち「関数型プログラミングから来た知見」と「同レイヤの先達(主にC++)にて醸成された知見」である．それでは見ていこう．
+即ち「関数型プログラミングから来た知見」と「同レイヤの先達 （主にC++）にて醸成された知見」である．それでは見ていこう．
 
 \section{ゼロコスト抽象化}
 強力な抽象化，安全性検査等を実行時のコストを払わずに実現するという思想．
@@ -33,13 +42,21 @@ Rustは「ゼロコスト抽象化」を実現する「トレイト」ベース�
 従ってコードを書く際のつらみも，書かれたコードのつよみも，大体この思想に依るものである．
 
 \subsection{トレイト}
-ゼロコスト抽象化を担う象徴的な機能の1つがトレイトである．
-トレイトとはこの語の和訳の通り，ある型が有する「特徴」を示す言語機能だ，此処で言う特質とは特定のシグネチャの関数群や関連する型が実装されていることを指す．
-例えばC++やJavaに代表されるジェネリクスでは型をパラメータTのようにして扱う事が出来るが，それがどういった性質の型であるか制約を課す事ができない．
+C++やJava，C\# に代表されるジェネリクスについて思い出して欲しい．
+型をパラメータTに置き換える事により，逐一具体的な型についてコピーアンドペーストしなくとも
+汎ゆる型を扱う事の出来る凄い奴だ．
+だが，これらの言語のジェネリクスの型パラメータはそれがどういった性質の型であるか制約を課す事が出来ない．
+そのため「ジェネリックな関数内のどの式でエラーが起きたか」は知ることが出来るが，
+「その型にどういった性質が欠如していたのか」を具体的に知ることは出来ないのである．
 
+するとジェネリクスについて我々は考えを改めなければならない．
 我々に必要なのは「汎ゆる型を通すジェネリクス」ではなく
-
 Rustは2つのジェネリクスを持つ．静的ディスパッチと動的ディスパッチである．
+
+ゼロコスト抽象化を担う象徴的な機能の1つがトレイトである．
+トレイトとはこの語の和訳の通り，ある型が有する「特徴」を示す言語機能である．
+此処で言う特質とは特定のシグネチャの関数群や関連する型が実装されていることを指す．
+
 せつめい〜
 
 明らかに型クラスでは？と思った一部の諸兄，残念ながらHigherKindType対応では無いためFunctor等は努力が必要である．
@@ -159,3 +176,14 @@ Quick Sort，Hoare論理，CSPの作者として知られるTony Hoare氏はnull
 \section{Rustの門を叩く}
 rustは現在バージョン1.10.0
 現在ライブラリの仕様がどんどんstableになっている最中
+
+\begin{thebibliography}{9}
+\bibitem{most_loved} stackoverflow Developer Survey Results 2016 \\
+  \url{https://stackoverflow.com/research/developer-survey-2016}
+\bibitem{rustup} rustup: the Rust toolchain installer \\
+  \url{https://github.com/rust-lang-nursery/rustup.rs}
+\bibitem{rustdoc_ja} rust-lang-ja/the-rust-programming-language-ja \\
+  \url{https://github.com/rust-lang-ja/the-rust-programming-language-ja}
+\bibitem{nomicon} The Rustnomicon - The Dark Arts of Advanced and Unsafe Rust Programming \\
+  \url{https://doc.rust-lang.org/nomicon/}
+\end{thebibliography}
