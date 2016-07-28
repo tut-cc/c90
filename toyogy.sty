@@ -21,18 +21,26 @@
 
 \makeatletter
 
-\def\section{\@startsection {section}{1}{\z@}{0.1ex}{0.1ex}{\large}}
+%\def\section{\@startsection {section}{1}{\z@}{0.1ex}{0.1ex}{\large}}
 
-\setlength{\textwidth}{155truemm}      
-\setlength{\fullwidth}{\textwidth}     
-\setlength{\oddsidemargin}{15truemm}   
-\addtolength{\oddsidemargin}{-1truein} 
-\setlength{\evensidemargin}{15truemm}  
-\addtolength{\evensidemargin}{-1truein}
-\setlength{\topmargin}{30truemm}       
-\setlength{\textheight}{197truemm}     
-\addtolength{\topmargin}{-1truein}     
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{2}%
 
+\setlength{\textwidth}{155truemm}
+\setlength{\fullwidth}{\textwidth}
+%\setlength{\textwidth}{\fullwidth}
+\setlength{\oddsidemargin}{15truemm}
+\addtolength{\oddsidemargin}{-1.15truein}
+\setlength{\evensidemargin}{15truemm}
+\addtolength{\evensidemargin}{-1.15truein}
+\setlength{\topmargin}{30truemm}
+% \setlength{\textheight}{197truemm}
+\setlength{\textheight}{230truemm}
+\addtolength{\topmargin}{-2.4truein}
+\addtolength{\footskip}{8truemm}
+
+
+%
 \makeatother
 
 \usepackage{etoolbox}
@@ -74,15 +82,15 @@
 \makeatother
 
 \makeatletter
-\renewcommand{\subsection}{\@startsection{subsection}{2}{\z@}%
-{0.1ex}%
-{0.1ex}%
-{\normalsize}}
-
-\renewcommand{\subsubsection}{\@startsection{subsubsection}{3}{\z@}%
-{0.1ex}%
-{0.1ex}%
-{\normalsize}}
+%\renewcommand{\subsection}{\@startsection{subsection}{2}{\z@}%
+%{0.1ex}%
+%{0.1ex}%
+%{\normalsize}}
+%
+%\renewcommand{\subsubsection}{\@startsection{subsubsection}{3}{\z@}%
+%{0.1ex}%
+%{0.1ex}%
+%{\normalsize}}
 \makeatother
 
 \renewcommand{\figurename}{Fig.}
