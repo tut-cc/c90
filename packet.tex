@@ -1,0 +1,251 @@
+% #+TITLE: Go言語でPacket解析
+% #+AUTHOR: @emaxser
+% #+EMAIL: emaxser@bonprosoft.com
+
+
+\chapter{Go言語でPacket解析}
+\section{はじめに}
+はじめまして、コンピュータクラブWeb班班長の @emaxser です。
+ここ5年、6年くらいパケット眺めてたら研究室でもパケットを眺めることになりました。
+ということで、パケットを眺める人を増やすためになぜかGoogleのGithubリポジトリに存在するパケット解析ライブラリであるgopacketを用いてパケットを触る方法を書いていきたいと思います。
+gopacket はGo言語のライブラリですのでGo言語のインストールを行って下さい。そして、以下のコマンドを実行して下さい。
+
+% #+BEGIN_SRC text
+\begin{lstlisting}
+$ go get github.com/google/gopacket
+\end{lstlisting}
+% #+END_SRC
+
+これで準備は完了です。では楽しくパケットを触っていきましょう。
+
+\section{簡単なパケットキャプチャ}
+とりあえずキャプチャしたパケットの情報がとりあえず見ることが出来るパケットキャプチャを作成してみましょう。
+
+まずソースコードを見たほうが早いと思うので簡単に見てみましょう。
+
+% #+BEGIN_SRC go 
+\begin{lstlisting}
+package main
+
+import (
+	"flag"
+	"fmt"
+	"github.com/google/gopacket/dumpcommand"
+	"github.com/google/gopacket/pcap"
+)
+
+var iface = flag.String("i", "eth0", "Interface to read packets from")
+
+func main() {
+  flag.Parse()
+	inactive, err := pcap.NewInactiveHandle(*iface)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer inactive.CleanUp()
+
+	err = inactive.SetPromisc(true)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	handle, err := inactive.Activate()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer handle.Close()
+
+	dumpcommand.Run(handle)
+}
+\end{lstlisting}
+% #+END_SRC
+
+まず、コマンドライン引数のフラグをパースして初期設定を読み込みます。このプログラムではインターフェース名をコマンドライン引数として渡すのでその解析を行ってくれます。
+
+そしてそこから最後の行までインターフェースからパケットキャプチャする前準備のおまじないです。設定やらを行っています。今回はプロミスキャス・モードという自分宛以外のパケットもキャプチャ出来るようにだけ設定を行っています。
+
+そして、dumpcommandのRunという関数にパケットキャプチャするhundleを渡してパケットの情報を取り出して貰っています。
+
+dumpcommand.Run関数はこのパケットソースから情報を表示してくれる関数になっています。dumpcommand.Runという関数は引数にPacketDataSourceというインターフェースを満たした型を要求します。PacketDataSourceというインターフェースにはReadPacketData()という関数が含まれている事が条件となっています。
+
+ReadPacketData()は多くの場合、次のパケットを返す関数です。
+
+今回、この次のパケットというのがインターフェースを流れてきた次のパケットという意味なので、これでパケットキャプチャを行えているということになります。
+
+
+\section{解析情報の抽出}
+では、上記のパケットキャプチャから自分が欲しい情報だけを取り出して見ましょう。
+
+まずはソースコードです。
+
+% #+BEGIN_SRC go 
+\begin{lstlisting}
+package main
+
+import (
+	"flag"
+	"fmt"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
+)
+
+var iface = flag.String("i", "eth0", "Interface to read packets from")
+
+func capRun(src gopacket.PacketDataSource) {
+	var eth layers.Ethernet
+	var ip4 layers.IPv4
+	var ip6 layers.IPv6
+	var tcp layers.TCP
+	var udp layers.UDP
+	var payload gopacket.Payload
+	parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &ip6, &tcp, &udp, &payload)
+	decodedLayers := make([]gopacket.LayerType, 0, 10)
+	for {
+		data, _, err := src.ReadPacketData()
+		if err != nil {
+			fmt.Println("Error reading packet data: ", err)
+			continue
+		}
+		fmt.Println("Decoding packet")
+		err = parser.DecodeLayers(data, &decodedLayers)
+		for _, typ := range decodedLayers {
+			fmt.Println("  layer type", typ)
+			switch typ {
+			case layers.LayerTypeEthernet:
+				fmt.Println("    Eth ", eth.SrcMAC, eth.DstMAC)
+			case layers.LayerTypeIPv4:
+				fmt.Println("    IP4 ", ip4.SrcIP, ip4.DstIP)
+			case layers.LayerTypeIPv6:
+				fmt.Println("    IP6 ", ip6.SrcIP, ip6.DstIP)
+			case layers.LayerTypeTCP:
+				fmt.Println("    TCP ", tcp.SrcPort, tcp.DstPort)
+			case layers.LayerTypeUDP:
+				fmt.Println("    UDP ", udp.SrcPort, udp.DstPort)
+			}
+		}
+	}
+}
+
+func main() {
+	flag.Parse()
+	inactive, err := pcap.NewInactiveHandle(*iface)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer inactive.CleanUp()
+
+	err = inactive.SetPromisc(true)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	handle, err := inactive.Activate()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer handle.Close()
+
+	capRun(handle)
+}
+\end{lstlisting}
+% #+END_SRC
+
+このソースコードは最初のソースコードにcapRunという関数を追加し、dumpcommand.RunではなくcapRunを呼び出すように変更しました。
+
+capRunではPacketDataSourceからReadPacketDataメソッドを用いて順次パケットを処理して行っています。
+
+capRunの中ではまず、それぞれのレイヤーのパーサを作成します。ここで指定されているレイヤーに ReadPacketData から得られるパケットのバイナリデータをパーサがフィットしてくれます。
+
+あとは見たままです。それぞれのレイヤーが存在しているか確認し、存在していればその情報を表示するといったものになっています。
+
+ここまで見たからにはもう、後は欲しいプロトコルのレイヤを追加したり、必要ない情報を表示させないといったことは簡単ですね。
+
+さぁ、どんどん自分の好きなようにパケット解析しましょう。下記のドキュメントを読むと、 gopacket が多くのプロトコルに対応している事が分かると思います。自分の好きなプロトコルの情報をぜひキャプチャして確認してみて下さい。
+
+https://godoc.org/github.com/google/gopacket/layers
+
+* ファイルからのパケット解析
+パケット解析はインターフェースから情報を得るだけでなく、保存されたpcapファイルなどから情報を得る事もあります。最後にこの方法を解説します。
+
+まぁ、解析と行っても先ほどのソースコードとほとんど異なる所がないようなソースコードになっています。
+
+% #+BEGIN_SRC go
+\begin{lstlisting}
+package main
+
+import (
+	"flag"
+	"fmt"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/examples/util"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
+)
+
+var filename = flag.String("f", "", "input file")
+
+func capRun(src gopacket.PacketDataSource) {
+	var eth layers.Ethernet
+	var ip4 layers.IPv4
+	var ip6 layers.IPv6
+	var tcp layers.TCP
+	var udp layers.UDP
+	var payload gopacket.Payload
+	parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &ip6, &tcp, &udp, &payload)
+	decodedLayers := make([]gopacket.LayerType, 0, 10)
+	for {
+		data, _, err := src.ReadPacketData()
+		if err != nil {
+			fmt.Println("Error reading packet data: ", err)
+			return
+		}
+		fmt.Println("Decoding packet")
+		err = parser.DecodeLayers(data, &decodedLayers)
+		for _, typ := range decodedLayers {
+			fmt.Println("  layer type", typ)
+			switch typ {
+			case layers.LayerTypeEthernet:
+				fmt.Println("    Eth ", eth.SrcMAC, eth.DstMAC)
+			case layers.LayerTypeIPv4:
+				fmt.Println("    IP4 ", ip4.SrcIP, ip4.DstIP)
+			case layers.LayerTypeIPv6:
+				fmt.Println("    IP6 ", ip6.SrcIP, ip6.DstIP)
+			case layers.LayerTypeTCP:
+				fmt.Println("    TCP ", tcp.SrcPort, tcp.DstPort)
+			case layers.LayerTypeUDP:
+				fmt.Println("    UDP ", udp.SrcPort, udp.DstPort)
+			}
+		}
+	}
+}
+
+func main() {
+	defer util.Run()()
+	pcapfile, err := pcap.OpenOffline(*filename)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer pcapfile.Close()
+
+	capRun(pcapfile)
+	//dumpcommand.Run(handle)
+}
+\end{lstlisting}
+% #+END_SRC
+
+先ほどとの違いは、main関数とcapRun関数のなかでエラー時に continue ではなく return を行うように変更になっているだけです。main関数の中でインターフェースから読み込むのではなく、 pcap.OpenOffline関数を用いてファイルから読み込んでいます。
+
+また、 pcap.OpenOffline は pcap.Handle といった型を返すのですが、この型は ReadPacketData メソッドが実装されており、 PacketDataSource インターフェースを満たすので、 capRun に渡すただけで、キャプチャとして動作します。
+
+
+\section{さいごに}
+Go言語では gopacket というライブラリを利用するだけで、簡単にパケット解析を行うことが出来ます。
+
+パケット解析は誰でも簡単に楽しく行える趣味なので、この記事を読んでみて簡単かな？と思った人は楽しくパケット解析をしてみましょう。
+
