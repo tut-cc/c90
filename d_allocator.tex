@@ -1,0 +1,155 @@
+\chapter{D言語でアロケータを使ってみた}
+
+\section{はじめに}
+
+この記事では，D言語を用いてソフトウェア無線でもしようかと思っていましたが，
+諸事情(主に力不足)により間に合わないことが予想されたため，以前より書いておきたいと思っていたCalyso(https://github.com/Syniurge/Calypso)というD言語コンパイラ(?)について紹介します．
+BPSK (Binary Phase Shift Keying)からOFDM (Orthogonal Frequency Division Multiplexing)などの変調方式をD言語で実装する話を書きたかったのですが，仕方ないですね．
+
+と，思っていたのですが，LLVMのビルドが数時間経っても終わらないので，D言語でアロケータを使ってみたのでアロケータの話を書きます．仕方ないですね．
+
+
+
+\section{D言語とは}
+
+D言語というプログラミング言語をそもそも知らないという人が大半だと思いますので，最初にD言語について軽く説明します．
+D言語はC言語の後継として開発された(されている)言語で，次のような特徴を持ちます．
+
+\begin{itemize}
+\item C言語やC++の一部とのリンクが可能
+\item 標準でガベージコレクタが走っているが，停止させることも可能
+\item 標準ライブラリがある程度揃っている
+\item 強力なテンプレートによる静的メタプログラミングが可能
+\item コンパイル時に様々な関数が実行可能
+\end{itemize}
+
+以下はD言語でのHello, World!の例です．
+
+\begin{lstlisting}[]
+import std.stdio;
+
+void main()
+{
+    writeln("Hello, World!");
+}
+\end{lstlisting}
+
+
+\section{Stop the world GC}
+
+D言語のガベージコレクタは時代遅れのガベージコレクタらしく，
+ガベージコレクション時にすべてのスレッドが停止します．
+停止時間が数マイクロ秒程度の短い区間であれば全然問題ないのですが，
+数 [ms]停止することも珍しくないようです． 60 [Hz]の1周期が16.7
+{[}ms{]}ですので，数 [ms]がいかに大きな値かわかるでしょう．
+
+ゲームであれば数msは1フレーム程度でしょうが(それでも大きいですが)，もっと深刻な分野はたくさんあります．
+たとえば，ソフトウェア無線と呼ばれる技術では，ソフトウェアによって無線機を構築します．
+ソフトウェア無線では，構成する無線機により要求は変わりますが，AD変換器から毎秒$10 \times 10^6$ [samples/sec]も送られてくる波形データを信号処理して，波形に乗った情報を復調し，相手にデータを正確な時間を開けて送り返すという処理が必要になります．
+このような超精密時間で動くソフトウェアでは1
+{[}ms{]}でも大きすぎる，というより無理なのです．
+
+
+\section{std.experimental.allocator}
+
+そこで，Andrei Alexandrescuによって開発されたメモリアロケータライブラリが\texttt{std.experimental.allocator}です．
+Andreiはあの「Modern C++ Design」の著者です．
+そんなAndreiが作ったメモリアロケータライブラリですから，
+\texttt{std.experimental.allocator}では，基本的なアロケータをコンパイル時に組み合わせることで高度なアロケータを構築できます．
+つまり，「基本的なアロケータを組み合わせて，自分だけの最強のアロケータを作ろう！！」ってことです．
+
+
+\section{アロケータを使ってみる}
+
+
+\subsection{Mallocator}
+
+まずは\texttt{malloc},
+\texttt{free}を使う\texttt{std.experimental.allocator.mallocator.Mallocator}を使ってみましょう．
+\texttt{Mallocator.instance}でインスタンスを取得し，\texttt{makeArray}で配列を確保，\texttt{dispose}で開放します．
+\texttt{main}関数では，最初にガベージコレクタを停止させています．
+もちろん，アロケータを使うからといってガベージコレクタを停止させる必要はありません．
+
+\begin{lstlisting}[]
+import std.experimental.allocator;
+import std.experimental.allocator.mallocator;
+import core.memory;
+
+void main() {
+    GC.disable();
+    mainImpl();
+}
+
+void mainImpl() @nogc {
+    auto myAlloc = Mallocator.instance;
+    int[] a = myAlloc.makeArray!int(100);
+    scope(exit) myAlloc.dispose(a);
+}
+\end{lstlisting}
+
+
+\subsection{FreeList, FreeTree}
+
+次に，フリーリストを持ったアロケータ\texttt{FreeList}を使ってみましょう．
+\texttt{FreeList}は使用しなくなったメモリ領域を開放せずに保持しておき，再利用することでメモリ確保を高速化します．
+確保時には，指定サイズ範囲内のメモリ要求はフリーリストから確保され，それ以外は親アロケータ(ここでは\texttt{Mallocator})に処理が渡されます．
+以下のコードは，\texttt{mainImpl}の中身のみを記述しています．
+
+\begin{lstlisting}
+FreeList!(Mallocator, 0, 128) myAlloc;
+int[] a = myAlloc.makeArray!int(4);
+auto p = a.ptr;
+
+myAlloc.dispose(a);
+
+a = myAlloc.makeArray!int(4);
+assert(p == a.ptr); // 再利用されている
+myAlloc.dispose(a);
+\end{lstlisting}
+
+\texttt{FreeList}と同じ考えのアロケータとして\texttt{FreeTree}があります．
+\texttt{FreeList}は単方向リストで開放済みメモリ領域を管理しているのに対し，\texttt{FreeTree}では二分木を用いて管理しています．
+
+
+\subsection{Quantizer}
+
+メモリ確保のサイズをある一定値の整数倍にしたいときに使用します．
+\texttt{Quantizer}は\texttt{FreeTree}(や\texttt{FreeList})と相性がよいです．
+以下の例では，64byteの整数倍のサイズを必ず確保します．
+これにより，FreeTreeでのヒット率を向上させることができます．
+
+\begin{lstlisting}
+alias MyAlloc = Quantizer!(FreeTree!Mallocator, n => (n/64 + 1) * 64);
+\end{lstlisting}
+
+
+\subsection{StackFront}
+
+スタック領域からメモリを確保してくれる便利なアロケータです．
+指定したサイズ以上のメモリ確保要求は，もう一つのアロケータ(ここでは\texttt{Mallocator})にフォールバックされます．
+
+\begin{lstlisting}
+alias FromStack = StackFront!(4096, Mallocator);
+\end{lstlisting}
+
+
+\subsection{Segregator}
+
+あるしきい値以下のサイズのメモリ領域が要求された時と，しきい値以上のサイズが要求された場合でアロケータを切り替えてくれるアロケータです．
+以下の場合は，32byte以下では\texttt{FreeList!(Mallocator,\ 0,\ 32)}が，1024byte以下では\texttt{FreeList!(Mallocator,\ 0,\ 1024)}が，1025byte以上では\texttt{Mallocator}が使用されます．
+
+\begin{lstlisting}
+alias MyAlloc =
+    Segregator!(
+        32,         FreeList!(Mallocator, 0, 32),
+        1024,       FreeList!(Mallocator, 0, 1024),
+        Mallocator);
+\end{lstlisting}
+
+
+\section{まとめ}
+
+\texttt{std.experimental.allocator}のほんの一部を紹介しました．
+Mallocatorが速くて，かなりメモリに精通してないと自作アロケータでは勝てない気がします(ココらへんの知識があまりにもないのでよくわかりません)．
+一定サイズのメモリをずっと確保し続けるのであれば，FreeListは良い選択肢だと思いました．
+\texttt{std.experimental.allocator}の詳細やそれ以外の\texttt{std.experimental}パッケージは，冬コミかアドベントカレンダーで紹介したいと思います．
