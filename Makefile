@@ -1,5 +1,5 @@
 manuscript:manuscript.tex
 	platex manuscript.tex
 	platex manuscript.tex
-	dvipdfmx -p a4 manuscript.dvi
+	dvipdfmx -p 188mm,263mm manuscript.dvi
 
