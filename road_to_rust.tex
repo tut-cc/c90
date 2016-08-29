@@ -65,14 +65,14 @@ trait Hashable where Self : Eq {
 }
 \end{lstlisting}
 
-これはとある型がハッシュ可能である事を示すトレイトだ．Rustでは対象となる型をSelf，
+これはとある型がハッシュ可能である事を示すトレイトだ．Rustではその対象となる型をSelf，
 その値をselfと表現する．
 大文字から始まるのが型やトレイトで，
 小文字で始まるのがそれ以外の値やシンボルだと捉えて貰って構わない．
 
 HashableトレイトはSelf型の値の参照を取り，符号無し64ビット整数型を
-返す関数hashを要求する．また，トレイト名に続く where句 という部分で，
-SelfはEqトレイトを実装するという制約を追加している．
+返す関数hashを要求する．また，トレイト名に続くwhere句という部分で，
+self間の同値関係が成立する事を示すEqトレイトを実装するという制約を追加している．
 これに対し簡単な実装を与えてみよう．
 
 \begin{lstlisting}[language={C++},caption=トレイトの実装と利用例,label=hash_use]
@@ -110,7 +110,7 @@ fn parse_from_line<T: FromStr>(line: &str) -> Result<Vec<T>, Box<Error>>
 where T::Err: Error + 'static { ... }
 \end{lstlisting}
 
-T: FromStrというのはT型から文字列型へ変換出来る事を示すトレイトであり，
+T: FromStrというのは文字列型からT型へ変換出来る事を示すトレイトであり，
 またwhere句での追加の制約は，FromStrトレイトによって要求される「変換に
 失敗した場合に出すエラーの型Err」が，Rust全体で汎用的に使われているエラーの
 トレイトErrorを実装している事，加えて，T::Errの値が独立した寿命を有せる ('static) 事を要求してい
